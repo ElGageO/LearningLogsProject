@@ -2,26 +2,33 @@ from django.shortcuts import render, redirect
 
 from .forms import TopicForm, EntryForm
 from .models import Topic, Entry
+from django.contrib.auth.decorators import login_required
+from django.http import Http404
 
 # Create your views here.
 def index(request):
     return render(request, 'MainApp/index.html')
 
+@login_required
 def topics(request):
-    topics = Topic.objects.all()
+    topics = Topic.objects.filter(owner = request.user).order_by('-date_added')
 
     context = {'topics': topics} # The key is what is used in the HTML file; the value is what is used in views.py (easiest to use the same name; QED)
 
     return render(request, 'MainApp/topics.html', context)
 
+@login_required
 def topic(request, topic_id): # Second argument has to be consistent with what was defined in urls.py
     topic = Topic.objects.get(id = topic_id)
+    if topic.owner != request.user:
+        raise Http404
+
     entries = topic.entry_set.all().order_by('-date_added') # '-' is the same as order by <attr> desc in SQL
 
     context = {'topic':topic, 'entries':entries}
-
     return render(request, 'MainApp/topic.html', context)
 
+@login_required
 def new_topic(request):
     if request.method != 'POST': # Check to see if the request is a 'GET' request (new blank form) or a 'POST' request (submission of filled-out form)
         form = TopicForm()
@@ -29,15 +36,20 @@ def new_topic(request):
         form = TopicForm(data = request.POST)
 
         if form.is_valid():
-            new_topic = form.save()
+            new_topic = form.save(commit = False)
+            new_topic.owner = request.user
+            new_topic.save()
 
             return redirect('MainApp:topics')
     
     context = {'form': form}
     return render(request, 'MainApp/new_topic.html', context)
 
+@login_required
 def new_entry(request, topic_id):
     topic = Topic.objects.get(id = topic_id)
+    if topic.owner != request.user:
+        raise Http404
 
     if request.method != 'POST':
         form = EntryForm()
@@ -54,9 +66,12 @@ def new_entry(request, topic_id):
     context = {'form': form, 'topic': topic}
     return render(request, 'MainApp/new_entry.html', context)
 
+@login_required
 def edit_entry(request, entry_id):
     entry = Entry.objects.get(id = entry_id)
     topic = entry.topic
+    if topic.owner != request.user:
+        raise Http404
 
     if request.method != 'POST':
         form = EntryForm(instance = entry)
